@@ -118,4 +118,47 @@
 	return operation;
 }
 
+// Hieudinh dd/MM/yyyy 30/04/2020
+- (id<XCDYouTubeOperation>)handleGetVideoWithIdentifier:(NSString *)videoIdentifier completionHandler:(void (^)(AVAsset *__nullable asset, NSURL *__nullable url))completionHandler {
+	
+	__weak XCDYouTubeClient *weakSelf = self;
+	return [self getVideoWithIdentifier:videoIdentifier completionHandler:^(XCDYouTubeVideo * _Nullable video, NSError * _Nullable error) {
+		if (error == nil && video) {
+			NSArray *array = @[@(XCDYouTubeVideoQualityHD720),
+							   @(XCDYouTubeVideoQualityMedium360),
+							   @(XCDYouTubeVideoQualitySmall240)];
+			
+			for (unsigned long i = 0; i < array.count; i++) {
+                NSURL *url = video.streamURLs[array[i]];
+                if (url) {
+					AVAsset *asset = [weakSelf getAssetWithUrl:url];
+					if (asset) {
+						completionHandler(asset, url);
+						return;
+					}
+                }
+            }
+		}
+		completionHandler(nil, nil);
+	}];
+}
+
+// Hieudinh dd/MM/yyyy 30/04/2020
+- (AVAsset *__nullable)getAssetWithUrl:(NSURL *)url {
+	if (url) {
+		AVAsset *asset = [AVAsset assetWithURL:url];
+		CGFloat value = (CGFloat)asset.duration.value;
+		CGFloat timescale = (CGFloat)asset.duration.timescale;
+		if (timescale > 0) {
+			CGFloat length = value / timescale;
+			if (length > 0) {
+				return asset;
+			}
+		}
+		[asset cancelLoading];
+		return nil;
+	}
+	return nil;
+}
+
 @end

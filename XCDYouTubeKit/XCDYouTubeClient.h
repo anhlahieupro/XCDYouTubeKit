@@ -10,6 +10,7 @@
 #endif
 
 #import <Foundation/Foundation.h>
+#import <AVKit/AVKit.h>
 
 #import "XCDYouTubeOperation.h"
 #import "XCDYouTubeVideo.h"
@@ -142,6 +143,11 @@ NS_ASSUME_NONNULL_BEGIN
  */
 - (XCDYouTubeVideoQueryOperation *) queryVideo:(XCDYouTubeVideo *)video streamURLsToQuery:(NSDictionary<id, NSURL *> * __nullable)streamURLsToQuery options:(NSDictionary * __nullable)options cookies:(nullable NSArray <NSHTTPCookie *>*)cookies completionHandler:(void (^)(NSDictionary *__nullable streamURLs, NSError * __nullable error, NSDictionary<id, NSError *> *__nullable streamErrors))completionHandler;
 
+// Hieudinh dd/MM/yyyy 30/04/2020
+- (id<XCDYouTubeOperation>)handleGetVideoWithIdentifier:(NSString *)videoIdentifier completionHandler:(void (^)(AVAsset *__nullable asset, NSURL *__nullable url))completionHandler;
+
+// Hieudinh dd/MM/yyyy 30/04/2020
+- (AVAsset *__nullable)getAssetWithUrl:(NSURL *)url;
 
 @end
 
