@@ -191,8 +191,7 @@
 			switch (status) {
 				case AVKeyValueStatusLoaded: {
 					dispatch_async(dispatch_get_main_queue(), ^{
-						completionHandler(nil);
-						[asset cancelLoading];
+						completionHandler(asset);
 					});
 					break;
 				}
