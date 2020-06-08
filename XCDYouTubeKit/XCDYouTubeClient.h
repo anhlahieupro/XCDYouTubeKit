@@ -147,7 +147,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (id<XCDYouTubeOperation>)handleGetVideoWithIdentifier:(NSString *)videoIdentifier completionHandler:(void (^)(AVAsset *__nullable asset, NSURL *__nullable url))completionHandler;
 
 // Hieudinh dd/MM/yyyy 30/04/2020
-- (AVAsset *__nullable)getAssetWithUrl:(NSURL *)url;
+- (void)getAssetWithUrl:(NSURL *)url completionHandler:(void (^)(AVAsset *__nullable asset))completionHandler;
 
 @end
 

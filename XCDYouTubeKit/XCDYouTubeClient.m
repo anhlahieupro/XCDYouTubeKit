@@ -129,36 +129,59 @@
 							   @(XCDYouTubeVideoQualitySmall240)];
 			
 			for (unsigned long i = 0; i < array.count; i++) {
-                NSURL *url = video.streamURLs[array[i]];
-                if (url) {
-					AVAsset *asset = [weakSelf getAssetWithUrl:url];
-					if (asset) {
-						completionHandler(asset, url);
-						return;
-					}
-                }
-            }
+				NSURL *url = video.streamURLs[array[i]];
+				if (url) {
+					[weakSelf getAssetWithUrl:url completionHandler:^(AVAsset * _Nullable asset) {
+						if (asset) {
+							completionHandler(asset, url);
+							return;
+						}
+					}];
+				}
+			}
 		}
 		completionHandler(nil, nil);
 	}];
 }
 
 // Hieudinh dd/MM/yyyy 30/04/2020
-- (AVAsset *__nullable)getAssetWithUrl:(NSURL *)url {
+- (void)getAssetWithUrl:(NSURL *)url completionHandler:(void (^)(AVAsset *__nullable asset))completionHandler {
 	if (url) {
 		AVAsset *asset = [AVAsset assetWithURL:url];
-		CGFloat value = (CGFloat)asset.duration.value;
-		CGFloat timescale = (CGFloat)asset.duration.timescale;
-		if (timescale > 0) {
-			CGFloat length = value / timescale;
-			if (length > 0) {
-				return asset;
+		
+		NSString *playable = @"playable";
+		[asset loadValuesAsynchronouslyForKeys:@[playable] completionHandler:^{
+			NSError *error;
+			AVKeyValueStatus status = [asset statusOfValueForKey:playable error:&error];
+			
+			if (error) {
+				[asset cancelLoading];
+				completionHandler(nil);
+				return;
 			}
-		}
-		[asset cancelLoading];
-		return nil;
+			
+			switch (status) {
+				case AVKeyValueStatusUnknown:
+				case AVKeyValueStatusLoading:
+				case AVKeyValueStatusFailed:
+				case AVKeyValueStatusCancelled: {
+					dispatch_async(dispatch_get_main_queue(), ^{
+						completionHandler(nil);
+						[asset cancelLoading];
+					});
+					break;
+				}
+					
+				case AVKeyValueStatusLoaded: {
+					dispatch_async(dispatch_get_main_queue(), ^{
+						completionHandler(nil);
+						[asset cancelLoading];
+					});
+					break;
+				}
+			}
+		}];
 	}
-	return nil;
 }
 
 @end
