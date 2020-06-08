@@ -122,24 +122,52 @@
 - (id<XCDYouTubeOperation>)handleGetVideoWithIdentifier:(NSString *)videoIdentifier completionHandler:(void (^)(AVAsset *__nullable asset, NSURL *__nullable url))completionHandler {
 	
 	__weak XCDYouTubeClient *weakSelf = self;
+	
 	return [self getVideoWithIdentifier:videoIdentifier completionHandler:^(XCDYouTubeVideo * _Nullable video, NSError * _Nullable error) {
+		
 		if (error == nil && video) {
+			
 			NSArray *array = @[@(XCDYouTubeVideoQualityHD720),
 							   @(XCDYouTubeVideoQualityMedium360),
 							   @(XCDYouTubeVideoQualitySmall240)];
 			
+			dispatch_group_t group = dispatch_group_create();
+			__block BOOL isError = NO;
+			
 			for (unsigned long i = 0; i < array.count; i++) {
+				
 				NSURL *url = video.streamURLs[array[i]];
+				
 				if (url) {
+					
+					dispatch_group_enter(group);
+					
 					[weakSelf getAssetWithUrl:url completionHandler:^(AVAsset * _Nullable asset) {
+						
 						if (asset) {
+							isError = NO;
+							dispatch_group_leave(group);
 							completionHandler(asset, url);
 							return;
+							
+						} else {
+							isError = YES;
+							dispatch_group_leave(group);
 						}
+						
 					}];
 				}
 			}
+			
+			dispatch_group_notify(group,dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^ {
+				if (isError) {
+					completionHandler(nil, nil);
+				}
+			});
+			
+			return;
 		}
+		
 		completionHandler(nil, nil);
 	}];
 }
@@ -161,18 +189,17 @@
 			}
 			
 			switch (status) {
-				case AVKeyValueStatusUnknown:
-				case AVKeyValueStatusLoading:
-				case AVKeyValueStatusFailed:
-				case AVKeyValueStatusCancelled: {
+				case AVKeyValueStatusLoaded: {
 					dispatch_async(dispatch_get_main_queue(), ^{
 						completionHandler(nil);
 						[asset cancelLoading];
 					});
 					break;
 				}
-					
-				case AVKeyValueStatusLoaded: {
+				case AVKeyValueStatusUnknown:
+				case AVKeyValueStatusLoading:
+				case AVKeyValueStatusFailed:
+				case AVKeyValueStatusCancelled: {
 					dispatch_async(dispatch_get_main_queue(), ^{
 						completionHandler(nil);
 						[asset cancelLoading];
