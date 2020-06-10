@@ -144,7 +144,7 @@
 					
 					[weakSelf getAssetWithUrl:url completionHandler:^(AVAsset * _Nullable asset) {
 						
-						if (asset) {
+						if (asset && isError) {
 							isError = NO;
 							completionHandler(asset, url);
 						}
