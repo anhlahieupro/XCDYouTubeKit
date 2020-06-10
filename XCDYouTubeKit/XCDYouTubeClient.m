@@ -132,7 +132,7 @@
 							   @(XCDYouTubeVideoQualitySmall240)];
 			
 			dispatch_group_t group = dispatch_group_create();
-			__block BOOL isError = NO;
+			__block BOOL isError = YES;
 			
 			for (unsigned long i = 0; i < array.count; i++) {
 				
@@ -146,14 +146,10 @@
 						
 						if (asset) {
 							isError = NO;
-							dispatch_group_leave(group);
 							completionHandler(asset, url);
-							return;
-							
-						} else {
-							isError = YES;
-							dispatch_group_leave(group);
 						}
+						
+						dispatch_group_leave(group);
 						
 					}];
 				}
@@ -190,20 +186,27 @@
 			
 			switch (status) {
 				case AVKeyValueStatusLoaded: {
+					
 					dispatch_async(dispatch_get_main_queue(), ^{
 						completionHandler(asset);
 					});
 					break;
+					
 				}
+					
 				case AVKeyValueStatusUnknown:
 				case AVKeyValueStatusLoading:
 				case AVKeyValueStatusFailed:
 				case AVKeyValueStatusCancelled: {
+					
 					dispatch_async(dispatch_get_main_queue(), ^{
+						
 						completionHandler(nil);
 						[asset cancelLoading];
+						
 					});
 					break;
+					
 				}
 			}
 		}];
