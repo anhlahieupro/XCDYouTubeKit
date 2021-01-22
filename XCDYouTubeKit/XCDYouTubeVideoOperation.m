@@ -27,7 +27,7 @@ typedef NS_ENUM(NSUInteger, XCDYouTubeRequestType) {
 @property (atomic, copy, readonly) NSString *languageIdentifier;
 @property (atomic, strong, readonly) NSArray <NSHTTPCookie *> *cookies;
 @property (atomic, strong, readonly) NSArray <NSString *> *customPatterns;
-
+@property (atomic, assign) BOOL ranLastEmbedPage;
 @property (atomic, assign) NSInteger requestCount;
 @property (atomic, assign) XCDYouTubeRequestType requestType;
 @property (atomic, strong) NSMutableArray *eventLabels;
@@ -89,13 +89,27 @@ static NSError *YouTubeError(NSError *error, NSSet *regionsAllowed, NSString *la
 	_videoIdentifier = videoIdentifier ?: @"";
 	_languageIdentifier = languageIdentifier ?: @"en";
 	
-	_session = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration ephemeralSessionConfiguration]];
+	NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration ephemeralSessionConfiguration];
 	_cookies = [cookies copy];
 	_customPatterns = [customPatterns copy];
 	
 	for (NSHTTPCookie *cookie in _cookies) {
-		[_session.configuration.HTTPCookieStorage setCookie:cookie];
+		[configuration.HTTPCookieStorage setCookie:cookie];
 	}
+	
+	NSString *cookieValue = [NSString stringWithFormat:@"f1=50000000&f6=8&hl=%@", _languageIdentifier];
+	
+	NSHTTPCookie *additionalCookie = [NSHTTPCookie cookieWithProperties:@{
+																		NSHTTPCookiePath: @"/",
+																		NSHTTPCookieName: @"PREF",
+																		NSHTTPCookieValue: cookieValue,
+																		NSHTTPCookieDomain:@".youtube.com",
+																		NSHTTPCookieSecure:@"TRUE"
+	}];
+
+	[configuration.HTTPCookieStorage setCookie:additionalCookie];
+	configuration.HTTPAdditionalHeaders = @{@"User-Agent": @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0 Safari/605.1.15"};
+	_session = [NSURLSession sessionWithConfiguration:configuration];
 	_operationStartSemaphore = dispatch_semaphore_create(0);
 	
 	return self;
@@ -118,9 +132,17 @@ static NSError *YouTubeError(NSError *error, NSSet *regionsAllowed, NSString *la
 	if (self.eventLabels.count == 0)
 	{
 		if (self.requestType == XCDYouTubeRequestTypeWatchPage || self.webpage)
+		{
+			if (self.ranLastEmbedPage == NO) {
+				[self startLastEmbedPageRequest];
+				return;
+			}
 			[self finishWithError];
+		}
 		else
+		{
 			[self startWatchPageRequest];
+		}
 	}
 	else
 	{
@@ -142,13 +164,21 @@ static NSError *YouTubeError(NSError *error, NSSet *regionsAllowed, NSString *la
 	[self startRequestWithURL:webpageURL type:XCDYouTubeRequestTypeWatchPage];
 }
 
+// Last resort request, sometimes the `javaScriptPlayerURL` will randomly not appear on `webpage` but will appear on the `embedWebpage` regardless of age restrictions. This appears to be how youtube-dl handles it, see https://github.com/l1ving/youtube-dl/blob/4fcd20a46cbf35ebbeaf06dde3999ad4309d7a8e/youtube_dl/extractor/youtube.py#L1963
+- (void) startLastEmbedPageRequest
+{
+	self.ranLastEmbedPage = YES;
+	NSString *embedURLString = [NSString stringWithFormat:@"https://www.youtube.com/embed/%@", self.videoIdentifier];
+	[self startRequestWithURL:[NSURL URLWithString:embedURLString] type:XCDYouTubeRequestTypeEmbedPage];
+}
+
 - (void) startRequestWithURL:(NSURL *)url type:(XCDYouTubeRequestType)requestType
 {
 	if (self.isCancelled)
 		return;
 	
-	// Max (age-restricted VEVO) = 2×GetVideoInfo + 1×WatchPage + 1×EmbedPage + 1×JavaScriptPlayer + 1×GetVideoInfo + 1xDashManifest
-	if (++self.requestCount > 7)
+	// Max (age-restricted VEVO) = 2×GetVideoInfo + 1×WatchPage + 2×EmbedPage + 1×JavaScriptPlayer + 1×GetVideoInfo + 1xDashManifest
+	if (++self.requestCount > 8)
 	{
 		// This condition should never happen but the request flow is quite complex so better abort here than go into an infinite loop of requests
 		[self finishWithError];
@@ -183,9 +213,24 @@ static NSError *YouTubeError(NSError *error, NSSet *regionsAllowed, NSString *la
 	CFStringEncoding encoding = CFStringConvertIANACharSetNameToEncoding((__bridge CFStringRef)response.textEncodingName ?: CFSTR(""));
 	// Use kCFStringEncodingMacRoman as fallback because it defines characters for every byte value and is ASCII compatible. See https://mikeash.com/pyblog/friday-qa-2010-02-19-character-encodings.html
 	NSString *responseString = CFBridgingRelease(CFStringCreateWithBytes(kCFAllocatorDefault, data.bytes, (CFIndex)data.length, encoding != kCFStringEncodingInvalidId ? encoding : kCFStringEncodingMacRoman, false)) ?: @"";
-	NSAssert(responseString.length > 0, @"Failed to decode response from %@ (response.textEncodingName = %@, data.length = %@)", response.URL, response.textEncodingName, @(data.length));
 	
 	XCDYouTubeLogVerbose(@"Response: %@\n%@", response, responseString);
+	if ([(NSHTTPURLResponse *)response statusCode] == 429)
+	{
+		//See 429 indicates too many requests https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+		// This can happen when YouTube blocks the clients because of too many requests
+		[self handleConnectionError:[NSError errorWithDomain:XCDYouTubeVideoErrorDomain code:XCDYouTubeErrorTooManyRequests userInfo:@{NSLocalizedDescriptionKey : @"The operation couldn’t be completed because too many requests were sent."}] requestType:requestType];
+		return;
+	}
+	if (responseString.length == 0)
+	{
+		//Previously we would throw an assertion here, however, this has been changed to an error
+		//See more here https://github.com/0xced/XCDYouTubeKit/issues/479
+		self.lastError = [NSError errorWithDomain:XCDYouTubeVideoErrorDomain code:XCDYouTubeErrorEmptyResponse userInfo:nil];
+		XCDYouTubeLogError(@"Failed to decode response from %@ (response.textEncodingName = %@, data.length = %@)", response.URL, response.textEncodingName, @(data.length));
+		[self finishWithError];
+		return;
+	}
 	
 	switch (requestType)
 	{
@@ -349,6 +394,12 @@ static NSError *YouTubeError(NSError *error, NSSet *regionsAllowed, NSString *la
 - (void) finishWithError
 {
 	self.error = self.youTubeError ? YouTubeError(self.youTubeError, self.webpage.regionsAllowed, self.languageIdentifier) : self.lastError;
+	if (self.error == nil)
+	{
+		//This condition should never happen but as a last resort.
+		//See https://github.com/0xced/XCDYouTubeKit/issues/484
+		self.error = [NSError errorWithDomain:XCDYouTubeVideoErrorDomain code:XCDYouTubeErrorUnknown userInfo:@{NSLocalizedDescriptionKey : @"The operation couldn’t be completed because of an unknown error."}];
+	}
 	XCDYouTubeLogError(@"Video operation finished with error: %@\nDomain: %@\nCode:   %@\nUser Info: %@", self.error.localizedDescription, self.error.domain, @(self.error.code), self.error.userInfo);
 	[self finish];
 }

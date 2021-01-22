@@ -221,6 +221,26 @@
 	[self waitForExpectationsWithTimeout:5 handler:nil];
 }
 
+- (void) testVideo2
+{
+	//Add www.youtube.com path:/get_video_info to blacklist in Charles Proxy
+	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
+	[[XCDYouTubeClient defaultClient] getVideoWithIdentifier:@"CHqg6qOn4no" completionHandler:^(XCDYouTubeVideo *video, NSError *error)
+	 {
+		 XCTAssertNil(error);
+		 XCTAssertNotNil(video.title);
+		 XCTAssertTrue(video.viewCount > 0);
+		 XCTAssertNotNil(video.thumbnailURLs.firstObject);
+		 XCTAssertTrue(video.streamURLs.count > 0);
+		 XCTAssertTrue(video.duration > 0);
+		 [video.streamURLs enumerateKeysAndObjectsUsingBlock:^(NSNumber *key, NSURL *streamURL, BOOL *stop) {
+			 XCTAssertTrue([streamURL.query rangeOfString:@"signature="].location != NSNotFound || [streamURL.query rangeOfString:@"sig="].location != NSNotFound);
+		 }];
+		 [expectation fulfill];
+	 }];
+	[self waitForExpectationsWithTimeout:5 handler:nil];
+}
+
 // See https://github.com/0xced/XCDYouTubeKit/issues/420#issue-400541618
 
 - (void) testVideo1IsPlayable
@@ -644,6 +664,25 @@
 		setenv("XCDYouTubeKitLogLevel", logLevel, 1);
 }
 
+//One crude way to get this error to trigger for testing is to execute a ton of operations in a for loop
+//However, you can also do this with a tool like Charles Proxy and returning a 429 status code for every request to youtube.com
+- (void) testTooManyRequestsError
+{
+	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
+	[[XCDYouTubeClient defaultClient] getVideoWithIdentifier:@"V_xRSxKE1jg" completionHandler:^(XCDYouTubeVideo *video, NSError *error)
+	{
+		NSError *underlyingError = error.userInfo[NSUnderlyingErrorKey];
+		XCTAssertNil(video);
+		XCTAssertEqualObjects(error.domain, XCDYouTubeVideoErrorDomain);
+		XCTAssertEqual(error.code, XCDYouTubeErrorNetwork);
+		XCTAssertEqual(underlyingError.domain, XCDYouTubeVideoErrorDomain);
+		XCTAssertEqual(underlyingError.code, XCDYouTubeErrorTooManyRequests);
+		XCTAssertEqualObjects(error.localizedDescription, @"The operation couldn’t be completed because too many requests were sent.");
+		[expectation fulfill];
+	}];
+	[self waitForExpectationsWithTimeout:5 handler:nil];
+}
+
 - (void) testRemovedVideo
 {
 	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
@@ -686,6 +725,19 @@
 	[self waitForExpectationsWithTimeout:5 handler:nil];
 }
 
+- (void) testEmptyResponse_offline
+{
+	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
+	[[XCDYouTubeClient defaultClient] getVideoWithIdentifier:@"HxaM6UJpAyg" completionHandler:^(XCDYouTubeVideo *video, NSError *error)
+	{
+ 		XCTAssertNil(video);
+		XCTAssertEqualObjects(error.domain, XCDYouTubeVideoErrorDomain);
+		XCTAssertEqual(error.code, XCDYouTubeErrorEmptyResponse);
+		[expectation fulfill];
+	}];
+	[self waitForExpectationsWithTimeout:5 handler:nil];
+}
+
 - (void) testNonExistentVideoIdentifier
 {
 	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
@@ -694,7 +746,7 @@
 		XCTAssertNil(video);
 		XCTAssertEqualObjects(error.domain, XCDYouTubeVideoErrorDomain);
 		XCTAssertEqual(error.code, XCDYouTubeErrorNoStreamAvailable);
-		XCTAssertEqualObjects(error.localizedDescription, @"This video is unavailable.");
+		XCTAssertEqualObjects(error.localizedDescription, @"Video unavailable");
 		[expectation fulfill];
 	}];
 	[self waitForExpectationsWithTimeout:5 handler:nil];
@@ -708,7 +760,7 @@
 		XCTAssertNil(video);
 		XCTAssertEqualObjects(error.domain, XCDYouTubeVideoErrorDomain);
 		XCTAssertEqual(error.code, XCDYouTubeErrorNoStreamAvailable);
-		XCTAssertEqualObjects(error.localizedDescription, @"Cette vidéo n'est pas disponible.");
+		XCTAssertEqualObjects(error.localizedDescription, @"Vidéo non disponible");
 		[expectation fulfill];
 	}];
 	[self waitForExpectationsWithTimeout:5 handler:nil];

@@ -326,6 +326,29 @@ NSArray <NSHTTPCookie *>* XCDYouTubeProtectedVideosCookies()
 	[self waitForExpectationsWithTimeout:5 handler:nil];
 }
 
+// See testAlternativeSignatureValue.xml for Charles Proxy Setting
+// Import: Charles Proxy > Tools > Rewrite
+- (void) testAlternativeSignatureValue_offline
+{
+	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
+	[[XCDYouTubeClient defaultClient] getVideoWithIdentifier:@"rId6PKlDXeU" completionHandler:^(XCDYouTubeVideo *video, NSError *error)
+	{
+		XCTAssertNil(error);
+		XCTAssertNotNil(video.title);
+		XCTAssertTrue(video.viewCount > 0);
+		XCTAssertNotNil(video.expirationDate);
+		XCTAssertNotNil(video.thumbnailURLs.firstObject);
+		XCTAssertTrue(video.streamURLs.count > 0);
+		XCTAssertTrue(video.duration > 0);
+		[video.streamURLs enumerateKeysAndObjectsUsingBlock:^(NSNumber *key, NSURL *streamURL, BOOL *stop)
+		{
+			XCTAssertTrue([streamURL.query rangeOfString:@"signature="].location != NSNotFound || [streamURL.query rangeOfString:@"sig="].location != NSNotFound);
+		}];
+		[expectation fulfill];
+	}];
+	[self waitForExpectationsWithTimeout:5 handler:nil];
+}
+
 - (void) testProtectedVEVOIsPlayable
 {
 	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
@@ -429,13 +452,13 @@ NSArray <NSHTTPCookie *>* XCDYouTubeProtectedVideosCookies()
 		XCTAssertNil(video);
 		XCTAssertEqualObjects(error.domain, XCDYouTubeVideoErrorDomain);
 		XCTAssertEqual(error.code, XCDYouTubeErrorNoStreamAvailable);
-		XCTAssertEqualObjects(error.localizedDescription, @"This video is unavailable.");
+		XCTAssertEqualObjects(error.localizedDescription, @"Video unavailable");
 		[expectation fulfill];
 	}];
 	[self waitForExpectationsWithTimeout:5 handler:nil];
 }
 
-// With Charles: Tools -> Black List... -> Add host:www.youtube.com and path:yts/* to simulate connection error on the player script
+// With Charles: Tools -> Black List... -> Add host:www.youtube.com and path:s/player/* to simulate connection error on the player script
 - (void) testProtectedVideoWithPlayerScriptConnectionError_offline
 {
 	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
@@ -444,14 +467,13 @@ NSArray <NSHTTPCookie *>* XCDYouTubeProtectedVideosCookies()
 		XCTAssertNil(video);
 		XCTAssertEqualObjects(error.domain, XCDYouTubeVideoErrorDomain);
 		XCTAssertEqual(error.code, XCDYouTubeErrorNoStreamAvailable);
-		XCTAssertEqualObjects(error.localizedDescription, @"This video is unavailable.");
+		XCTAssertEqualObjects(error.localizedDescription, @"Video unavailable");
 		[expectation fulfill];
 	}];
 	[self waitForExpectationsWithTimeout:5 handler:nil];
 }
 
-// Edit testProtectedVideoWithoutSignatureFunction.json by replacing `c&&a.set(b,encodeURIComponent(Bv(` with `c.&&a.set(b,encodeURIComponent(Bv(` and
-//`s&&f.set(k.sp,encodeURIComponent(Bv()` with `s.&&f.set(k.sp,encodeURIComponent(Bv(`
+// Edit testProtectedVideoWithoutSignatureFunction.json by removing entire body for javascript URL and adding "XXXX"
 - (void) testProtectedVideoWithoutSignatureFunction_offline
 {
 	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
@@ -460,46 +482,30 @@ NSArray <NSHTTPCookie *>* XCDYouTubeProtectedVideosCookies()
 		XCTAssertNil(video);
 		XCTAssertEqualObjects(error.domain, XCDYouTubeVideoErrorDomain);
 		XCTAssertEqual(error.code, XCDYouTubeErrorNoStreamAvailable);
-		XCTAssertEqualObjects(error.localizedDescription, @"This video is unavailable.");
+		XCTAssertEqualObjects(error.localizedDescription, @"Video unavailable");
 		[expectation fulfill];
 	}];
 	[self waitForExpectationsWithTimeout:5 handler:nil];
 }
 
-// Edit testProtectedVideoWithBrokenSignatureFunction.json by returning null in the signature function
-//Replace `s&&f.set(k.sp,encodeURIComponent `X.&&f.set(k.sp,encodeURIComponent
-// & `c&&a.set(b,encodeURIComponent` with `X.&&a.set(b,encodeURIComponent`
-- (void) testProtectedVideoWithBrokenSignatureFunction_offline
+// Disable (when replacing mutiple values the other values revert back to the original)
+- (void) _testProtectedVideoWithoutJavaScriptPlayerURL_offline
 {
 	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
-	[[XCDYouTubeClient defaultClient] getVideoWithIdentifier:@"Pgum6OT_VH8" completionHandler:^(XCDYouTubeVideo *video, NSError *error)
+	[[XCDYouTubeClient defaultClient] getVideoWithIdentifier:@"nfWlot6h_JM" completionHandler:^(XCDYouTubeVideo *video, NSError *error)
 	{
 		XCTAssertNil(video);
 		XCTAssertEqualObjects(error.domain, XCDYouTubeVideoErrorDomain);
 		XCTAssertEqual(error.code, XCDYouTubeErrorNoStreamAvailable);
-		XCTAssertEqualObjects(error.localizedDescription, @"This video is unavailable.");
-		[expectation fulfill];
-	}];
-	[self waitForExpectationsWithTimeout:5 handler:nil];
-}
-
-// Edit testProtectedVideoWithoutJavaScriptPlayerURL.json by replacing `\"js\":` with `\"xs\":`
-- (void) testProtectedVideoWithoutJavaScriptPlayerURL_offline
-{
-	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
-	[[XCDYouTubeClient defaultClient] getVideoWithIdentifier:@"Pgum6OT_VH8" completionHandler:^(XCDYouTubeVideo *video, NSError *error)
-	{
-		XCTAssertNil(video);
-		XCTAssertEqualObjects(error.domain, XCDYouTubeVideoErrorDomain);
-		XCTAssertEqual(error.code, XCDYouTubeErrorNoStreamAvailable);
-		XCTAssertEqualObjects(error.localizedDescription, @"This video is unavailable.");
+		XCTAssertEqualObjects(error.localizedDescription, @"Video unavailable");
 		[expectation fulfill];
 	}];
 	[self waitForExpectationsWithTimeout:5 handler:nil];
 }
 
 // Edit testProtectedVideoWithNonAnonymousJavaScriptPlayerFunction.json by replacing all `(function` with `(Xfunction`
-// And replace `s&&f.set(k` with `x.&&f.set(k` and `c&&a.set(b` with `x.&&a.set(b`
+// And replace `Xu=function` with `Xu=funXtion` and
+//`decodeURIComponent` with `deXodeURIComponent`
 - (void) testProtectedVideoWithNonAnonymousJavaScriptPlayerFunction_offline
 {
 	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
@@ -508,13 +514,13 @@ NSArray <NSHTTPCookie *>* XCDYouTubeProtectedVideosCookies()
 		XCTAssertNil(video);
 		XCTAssertEqualObjects(error.domain, XCDYouTubeVideoErrorDomain);
 		XCTAssertEqual(error.code, XCDYouTubeErrorNoStreamAvailable);
-		XCTAssertEqualObjects(error.localizedDescription, @"This video is unavailable.");
+		XCTAssertEqualObjects(error.localizedDescription, @"Video unavailable");
 		[expectation fulfill];
 	}];
 	[self waitForExpectationsWithTimeout:5 handler:nil];
 }
 
-// With Charles: Tools -> Black List... -> Add host:www.youtube.com and path:embed/* to simulate connection error on the web page
+// With Charles: Tools -> Black List... -> Add host:www.youtube.com and path:embed/* to simulate connection error on the web page and replace and `jsUrl` with `jsXUrl` and `<script` with `<Xcript` in testAgeRestrictedVEVOVideoWithEmbedWebPageConnectionError.json
 - (void) testAgeRestrictedVEVOVideoWithEmbedWebPageConnectionError_offline
 {
 	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
@@ -523,7 +529,7 @@ NSArray <NSHTTPCookie *>* XCDYouTubeProtectedVideosCookies()
 		XCTAssertNil(video);
 		XCTAssertEqualObjects(error.domain, XCDYouTubeVideoErrorDomain);
 		XCTAssertEqual(error.code, XCDYouTubeErrorNoStreamAvailable);
-		XCTAssertEqualObjects(error.localizedDescription, @"Sign in to confirm your age");
+		XCTAssertEqualObjects(error.localizedDescription, @"This video may be inappropriate for some users.");
 		[expectation fulfill];
 	}];
 	[self waitForExpectationsWithTimeout:5  handler:nil];
@@ -552,7 +558,7 @@ NSArray <NSHTTPCookie *>* XCDYouTubeProtectedVideosCookies()
 }
 
 // See https://github.com/0xced/XCDYouTubeKit/issues/431
-// Remove \\/yts\\/jsbin\\/player_ias-vfl61X81T\\/en_US\\/base.js\ from testAgeRestrictedVideo1WithNoJavaScriptPlayerURL.json
+// Replace `assets` with `Xassets` and `jsUrl` with `jsXUrl` in testAgeRestrictedVideo1WithNoJavaScriptPlayerURL.json
 - (void) testAgeRestrictedVideo1WithNoJavaScriptPlayerURL_offline
 {
 	__weak XCTestExpectation *expectation = [self expectationWithDescription:@""];
@@ -561,7 +567,7 @@ NSArray <NSHTTPCookie *>* XCDYouTubeProtectedVideosCookies()
 		 XCTAssertNil(video);
 		 XCTAssertEqualObjects(error.domain, XCDYouTubeVideoErrorDomain);
 		 XCTAssertEqual(error.code, XCDYouTubeErrorNoStreamAvailable);
-		 XCTAssertEqualObjects(error.localizedDescription, @"Sign in to confirm your age");
+		 XCTAssertEqualObjects(error.localizedDescription, @"This video may be inappropriate for some users.");
 		 [expectation fulfill];
 	 }];
 	[self waitForExpectationsWithTimeout:5 handler:nil];

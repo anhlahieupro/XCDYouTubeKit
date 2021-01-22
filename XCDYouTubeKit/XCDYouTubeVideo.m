@@ -169,11 +169,11 @@ static NSDate * ExpirationDate(NSURL *streamURL)
 	
 	NSString *playerResponse = info[@"player_response"];
 	NSString *streamMap = info[@"url_encoded_fmt_stream_map"];
-	NSArray *alternativeStreamMap = XCDStreamingDataWithString(playerResponse)[@"formats"];
+	NSArray *alternativeStreamMap = XCDStreamingDataWithString(playerResponse)[@"formats"] == nil ? info[@"streamingData"][@"formats"] : XCDStreamingDataWithString(playerResponse)[@"formats"];
 	NSString *httpLiveStream = info[@"hlsvp"] ?: XCDHTTPLiveStreamingStringWithString(playerResponse);
 	NSString *adaptiveFormats = info[@"adaptive_fmts"];
-	NSArray *alternativeAdaptiveFormats = XCDStreamingDataWithString(playerResponse)[@"adaptiveFormats"];
-	NSDictionary *videoDetails = XCDDictionaryWithString(playerResponse)[@"videoDetails"];
+	NSArray *alternativeAdaptiveFormats = XCDStreamingDataWithString(playerResponse)[@"adaptiveFormats"]  == nil ? info[@"streamingData"][@"adaptiveFormats"] : XCDStreamingDataWithString(playerResponse)[@"adaptiveFormats"];
+	NSDictionary *videoDetails = XCDDictionaryWithString(playerResponse)[@"videoDetails"] == nil ? info[@"videoDetails"] : XCDDictionaryWithString(playerResponse)[@"videoDetails"];
 	NSString *multiCameraMetadataMap = XCDDictionaryWithString(playerResponse)[@"multicamera"][@"playerLegacyMulticameraRenderer"][@"metadataList"];
 	
 	NSMutableDictionary *userInfo = response.URL ? [@{ NSURLErrorKey: (id)response.URL } mutableCopy] : [NSMutableDictionary new];
@@ -362,7 +362,7 @@ static NSDate * ExpirationDate(NSURL *streamURL)
 	{
 		if (error)
 		{
-			NSString *reason = info[@"reason"] == nil ? XCDDictionaryWithString(playerResponse)[@"playabilityStatus"][@"reason"] : info[@"reason"];
+			NSString *reason = XCDReasonForErrorWithDictionary(info, playerResponse);
 			if (reason)
 			{
 				reason = [reason stringByReplacingOccurrencesOfString:@"<br\\s*/?>" withString:@" " options:NSRegularExpressionSearch range:NSMakeRange(0, reason.length)];
@@ -378,6 +378,27 @@ static NSDate * ExpirationDate(NSURL *streamURL)
 		}
 		return nil;
 	}
+}
+
+static NSString *XCDReasonForErrorWithDictionary(NSDictionary *info, NSString *playerResponse)
+{
+	NSString *reason = info[@"reason"] == nil ? XCDDictionaryWithString(playerResponse)[@"playabilityStatus"][@"reason"] : info[@"reason"];
+	NSDictionary *subReason =  XCDDictionaryWithString(playerResponse)[@"playabilityStatus"][@"errorScreen"][@"playerErrorMessageRenderer"][@"subreason"];
+	NSArray<NSDictionary *>* runs = subReason[@"runs"];
+	NSString *runsMessage = @"";
+	for (NSDictionary *message in runs)
+	{
+		NSString *text = message[@"text"];
+		if (text == nil)
+			continue;
+		runsMessage = [runsMessage stringByAppendingString:text];
+	}
+	if (runsMessage.length != 0)
+		return runsMessage;
+	if (subReason[@"simpleText"])
+		return subReason[@"simpleText"];
+
+	return reason;
 }
 
 - (NSDictionary <id, NSURL *>*)extractStreamURLsWithQuery:(NSArray *)streamQueries playerScript:(XCDYouTubePlayerScript *)playerScript userInfo:(NSMutableDictionary *)userInfo error:(NSError *__autoreleasing *)error
@@ -397,12 +418,14 @@ static NSDate * ExpirationDate(NSURL *streamURL)
 		{
 			stream = XCDDictionaryWithQueryString((NSString *)streamQuery);
 		}
-		NSDictionary *alternativeStreamInfo = XCDDictionaryWithQueryString(stream[@"cipher"]);
+		NSDictionary *alternativeStreamInfo = XCDDictionaryWithQueryString(stream[@"cipher"]).count == 0? XCDDictionaryWithQueryString(stream[@"signatureCipher"]) : XCDDictionaryWithQueryString(stream[@"cipher"]);
 		NSString *alternativeURLString = alternativeStreamInfo[@"url"];
 		
 		NSString *scrambledSignature = stream[@"s"] == nil? alternativeStreamInfo[@"s"] : stream[@"s"];
 		NSString *spParam = stream[@"sp"] == nil ? alternativeStreamInfo[@"sp"] : stream[@"sp"];
-		
+
+		if (scrambledSignature == nil)
+			XCDYouTubeLogInfo(@"No scrambled signature for stream: \n%@ This might result in a error.", stream);
 		if (scrambledSignature && !playerScript)
 		{
 			userInfo[XCDYouTubeNoStreamVideoUserInfoKey] = self;
